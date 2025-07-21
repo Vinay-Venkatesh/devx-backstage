@@ -1,4 +1,4 @@
-apiVersion: backstage.io/v1beta3
+apiVersion: scaffolder.backstage.io/v1beta3
 kind: Template
 metadata:
   name: python-fast-api-template
@@ -7,8 +7,6 @@ metadata:
 spec:
   owner: user:guest
   type: service
-
-
   parameters:
     - title: Project Info
       required:
@@ -51,7 +49,7 @@ spec:
       name: Fetch Base
       action: fetch:template
       input:
-        url: https://github.com/Vinay-Venkatesh/devx-backstage/blueprints/fastapi
+        url:  https://github.com/Vinay-Venkatesh/devx-backstage/tree/main/blueprints/fastapi
         values:
           name: ${{ parameters.name }}
           owner: ${{ parameters.owner }}
