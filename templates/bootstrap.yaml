@@ -30,18 +30,17 @@ spec:
                 kind: [User, Group]
 
 
-    - title: Choose Location
+    - title: Choose a location
       required:
         - repoUrl
       properties:
         repoUrl:
           title: Repository Location
           type: string
-          ui:
-            field: RepoUrlPicker
-            options:
-              allowedHosts:
-                - github.com
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.com
 
 
   steps:
@@ -49,7 +48,7 @@ spec:
       name: Fetch Base
       action: fetch:template
       input:
-        url:  https://github.com/Vinay-Venkatesh/devx-backstage/tree/main/blueprints/fastapi
+        url:  https://github.com/Vinay-Venkatesh/devx-backstage/blueprints/fastapi
         values:
           name: ${{ parameters.name }}
           owner: ${{ parameters.owner }}
