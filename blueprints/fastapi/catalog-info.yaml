@@ -2,7 +2,7 @@
 apiVersion: backstage.io/v1beta1
 kind: Component
 metadata:
-  name: '${{ values.name | dump }}'
+  name: ${{ values.name | dump }}
   tags:
     - python
     - fastapi
