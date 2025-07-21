@@ -1,0 +1,12 @@
+# catalog-info.yaml
+apiVersion: backstage.io/v1beta1
+kind: Component
+metadata:
+  name: '${{ values.name | dump }}'
+  tags:
+    - python
+    - fastapi
+spec:
+  type: service
+  lifecycle: development
+  owner: '${{ values.owner }}'
