@@ -6,14 +6,12 @@ on:
       - main
       - develop
     paths:
-      - 'blueprints/fastapi/**'
       - '.github/workflows/cd.yaml'
   pull_request:
     branches:
       - main
       - develop
     paths:
-      - 'blueprints/fastapi/**'
       - '.github/workflows/cd.yaml'
   workflow_dispatch:
     inputs:
@@ -51,18 +49,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd blueprints/fastapi
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx
 
       - name: Run tests
         run: |
-          cd blueprints/fastapi
           python -m pytest tests/ -v --tb=short
 
       - name: Lint code
         run: |
-          cd blueprints/fastapi
           pip install black flake8 isort
           black --check app/
           flake8 app/
@@ -106,8 +101,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./blueprints/fastapi
-          file: ./blueprints/fastapi/Dockerfile.prod
+          context: ../
+          file: ../Dockerfile.prod
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -150,13 +145,12 @@ jobs:
 
       - name: Update image tag in kustomization
         run: |
-          cd blueprints/fastapi/k8s
           sed -i "s|newTag: .*|newTag: ${{ needs.build-and-push.outputs.image_tag }}|g" kustomization.yaml
 
       - name: Deploy to staging
         run: |
           export KUBECONFIG=kubeconfig.yaml
-          kubectl apply -k blueprints/fastapi/k8s/overlays/staging
+          kubectl apply -k ../k8s/overlays/staging
           kubectl rollout status deployment/"${{ values.name }}-app" -n "${{ values.name }}-staging" --timeout=300s
 
       - name: Run smoke tests
@@ -190,13 +184,12 @@ jobs:
 
       - name: Update image tag in kustomization
         run: |
-          cd blueprints/fastapi/k8s
           sed -i "s|newTag: .*|newTag: ${{ needs.build-and-push.outputs.image_tag }}|g" kustomization.yaml
 
       - name: Deploy to production
         run: |
           export KUBECONFIG=kubeconfig.yaml
-          kubectl apply -k blueprints/fastapi/k8s/overlays/production
+          kubectl apply -k ../k8s/overlays/production
           kubectl rollout status deployment/"${{ values.name }}-app" -n "${{ values.name }}" --timeout=600s
 
       - name: Verify production deployment
