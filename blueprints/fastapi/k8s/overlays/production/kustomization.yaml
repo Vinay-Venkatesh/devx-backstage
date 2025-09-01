@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: "${{ values.name }}-app-production"
+  namespace: "${{ values.name }}"
+
+# Base configuration
+resources:
+- ../../
+
+# Common labels for production
+commonLabels:
+  environment: production
+  version: production
+
+# Common annotations for production
+commonAnnotations:
+  environment: production
+  cost-center: production
+  reliability-tier: critical
+
+# ConfigMap generator for production
+configMapGenerator:
+- name: "${{ values.name }}-app-config"
+  behavior: merge
+  literals:
+  - ENVIRONMENT=production
+  - LOG_LEVEL=WARNING
+  - DEBUG=false
+  - CORS_ORIGINS=https://api.yourdomain.com,https://www.yourdomain.com
+
+# Secret generator for production
+secretGenerator:
+- name: "${{ values.name }}-app-secrets"
+  behavior: merge
+  literals:
+  - DATABASE_PASSWORD=prod-db-password
+  - JWT_SECRET=prod-jwt-secret
+
+# Image tags for production
+images:
+- name: your-registry/fastapi-app
+  newTag: production
+
+# Patches for production environment
+patches:
+- path: production-patches.yaml
+  target:
+    kind: Deployment
+    name: "${{ values.name }}-app"
+- path: production-patches.yaml
+  target:
+    kind: HorizontalPodAutoscaler
+    name: "${{ values.name }}-app-hpa"
+
+# Namespace override (uses base namespace)
+namespace: "${{ values.name }}"
+
+# Replicas for production
+replicas:
+- name: "${{ values.name }}-app"
+  count: 5 

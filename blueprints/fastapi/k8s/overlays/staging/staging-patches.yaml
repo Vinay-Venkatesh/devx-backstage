@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "${{ values.name }}-app"
+spec:
+  template:
+    spec:
+      containers:
+      - name: "${{ values.name }}-app"
+        env:
+        - name: ENVIRONMENT
+          value: "staging"
+        - name: DEBUG
+          value: "true"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: "${{ values.name }}-app-hpa"
+spec:
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85 

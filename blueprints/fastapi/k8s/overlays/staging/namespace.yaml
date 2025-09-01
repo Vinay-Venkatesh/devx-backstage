@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "${{ values.name }}-staging"
+  labels:
+    name: "${{ values.name }}-staging"
+    environment: staging
+    app.kubernetes.io/name: "${{ values.name }}-app"
+    app.kubernetes.io/part-of: "${{ values.name }}-system"
+  annotations:
+    description: "Staging namespace for FastAPI application"
+    owner: "devops-team"
+    cost-center: "development" 

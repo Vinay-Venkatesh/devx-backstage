@@ -1,0 +1,62 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: "${{ values.name }}-app-staging"
+  namespace: "${{ values.name }}-staging"
+
+# Base configuration
+resources:
+- ../../
+
+# Common labels for staging
+commonLabels:
+  environment: staging
+  version: staging
+
+# Common annotations for staging
+commonAnnotations:
+  environment: staging
+  cost-center: development
+
+# ConfigMap generator for staging
+configMapGenerator:
+- name: "${{ values.name }}-app-config"
+  behavior: merge
+  literals:
+  - ENVIRONMENT=staging
+  - LOG_LEVEL=DEBUG
+  - DEBUG=true
+  - CORS_ORIGINS=https://staging.yourdomain.com
+
+# Secret generator for staging
+secretGenerator:
+- name: "${{ values.name }}-app-secrets"
+  behavior: merge
+  literals:
+  - DATABASE_PASSWORD=staging-db-password
+  - JWT_SECRET=staging-jwt-secret
+
+# Image tags for staging
+images:
+- name: your-registry/fastapi-app
+  newTag: staging
+
+# Patches for staging environment
+patches:
+- path: staging-patches.yaml
+  target:
+    kind: Deployment
+    name: "${{ values.name }}-app"
+- path: staging-patches.yaml
+  target:
+    kind: HorizontalPodAutoscaler
+    name: "${{ values.name }}-app-hpa"
+
+# Namespace override
+namespace: "${{ values.name }}-staging"
+
+# Replicas for staging
+replicas:
+- name: "${{ values.name }}-app"
+  count: 2 

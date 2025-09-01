@@ -1,0 +1,251 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'blueprints/fastapi/**'
+      - '.github/workflows/cd.yaml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'blueprints/fastapi/**'
+      - '.github/workflows/cd.yaml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      image_tag:
+        description: 'Custom image tag'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/"${{ values.name }}-app"
+  KUBECONFIG: ${{ secrets.KUBECONFIG }}
+
+jobs:
+  # Build and test the application
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd blueprints/fastapi
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run tests
+        run: |
+          cd blueprints/fastapi
+          python -m pytest tests/ -v --tb=short
+
+      - name: Lint code
+        run: |
+          cd blueprints/fastapi
+          pip install black flake8 isort
+          black --check app/
+          flake8 app/
+          isort --check-only app/
+
+  # Build and push Docker image
+  build-and-push:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.event.inputs.image_tag }},enable=${{ github.event.inputs.image_tag != '' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./blueprints/fastapi
+          file: ./blueprints/fastapi/Dockerfile.prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.tags }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  # Deploy to staging environment
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Update image tag in kustomization
+        run: |
+          cd blueprints/fastapi/k8s
+          sed -i "s|newTag: .*|newTag: ${{ needs.build-and-push.outputs.image_tag }}|g" kustomization.yaml
+
+      - name: Deploy to staging
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+          kubectl apply -k blueprints/fastapi/k8s/overlays/staging
+          kubectl rollout status deployment/"${{ values.name }}-app" -n "${{ values.name }}-staging" --timeout=300s
+
+      - name: Run smoke tests
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+          # Wait for service to be ready
+          kubectl wait --for=condition=ready pod -l app="${{ values.name }}-app" -n "${{ values.name }}-staging" --timeout=300s
+          # Basic health check
+          kubectl get svc -n "${{ values.name }}-staging"
+          echo "Staging deployment completed successfully"
+
+  # Deploy to production environment
+  deploy-production:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_PRODUCTION }}" > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Update image tag in kustomization
+        run: |
+          cd blueprints/fastapi/k8s
+          sed -i "s|newTag: .*|newTag: ${{ needs.build-and-push.outputs.image_tag }}|g" kustomization.yaml
+
+      - name: Deploy to production
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+          kubectl apply -k blueprints/fastapi/k8s/overlays/production
+          kubectl rollout status deployment/"${{ values.name }}-app" -n "${{ values.name }}" --timeout=600s
+
+      - name: Verify production deployment
+        run: |
+          export KUBECONFIG=kubeconfig.yaml
+          # Wait for all pods to be ready
+          kubectl wait --for=condition=ready pod -l app="${{ values.name }}-app" -n "${{ values.name }}" --timeout=600s
+          # Verify ingress
+          kubectl get ingress -n "${{ values.name }}"
+          echo "Production deployment completed successfully"
+
+      - name: Notify deployment success
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: success
+          text: "FastAPI app successfully deployed to production!"
+          channel: '#deployments'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Security scanning
+  security-scan:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Aquasecurity vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-and-push.outputs.image_tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Notify on failure
+  notify-failure:
+    needs: [build-and-test, build-and-push, deploy-staging, deploy-production]
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Notify deployment failure
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "FastAPI app deployment failed! Check the logs for details."
+          channel: '#deployments'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} 
