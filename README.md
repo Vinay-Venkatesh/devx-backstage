@@ -1,6 +1,6 @@
-# FastAPI Blueprint
+# IDP Blueprints
 
-A Backstage blueprint for creating FastAPI applications with Kubernetes deployment and CI/CD pipeline.
+A Backstage blueprint for creating applications with Kubernetes deployment and CI/CD pipeline.
 
 ## Features
 
