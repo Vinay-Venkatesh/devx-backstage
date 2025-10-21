@@ -5,9 +5,11 @@ metadata:
   title: Python Fast API
   description: A template for provisioning fastapi with built-in github workflow and precommit files.
 spec:
-  owner: user:guest
+  owner: group:default/ml-platform-engineering
   type: service
-  tags: python
+  tags: 
+    - python
+    - fastapi
   parameters:
     - title: Project Info
       required:
